@@ -29,3 +29,20 @@
 4. **Deliberation within the same person.** For each user, compare scenarios where they opened the text description with scenarios where they didn't. The original reports larger effects among description readers, but only across users.
 
 Caveat: this was a targeted search (about 15 queries plus the OSF data dictionary), not a systematic review. Before writing, search Google Scholar's "cited by" list for the 2018 *Nature* paper (several thousand citations) using each angle's keywords.
+
+## Novelty check for angle 2: reading direction and screen-side choice (15 Oct 2026)
+
+**Verdict:** I found no study that tests whether right-to-left readers choose differently by screen side in the Moral Machine data. I also found none that tests reading direction against moral-dilemma choices at all. This search can't prove that nobody has done it, but nothing turned up across about 10 targeted web searches and a read of the original supplement.
+
+**What exists, and how we differ:**
+- **Awad et al. 2018 supplement.** The left/right position of the two outcomes was "switched randomly, so as to avoid any bias from handedness". The only position analysis checks that each preference's effect size is the same whether the outcome was shown on the left or the right. They never report the overall rate of choosing the left option, and never break it down by country or by script. https://media.springernature.com/original/springer-static/esm/art%3A10.1038%2Fs41586-018-0637-6/MediaObjects/41586_2018_637_MOESM1_ESM.pdf
+- **Spatial agency bias.** Maass & Russo 2003, plus Italian–Malagasy–Arabic comparisons: people place the agent of an action in their script's reading direction. These are drawing and description tasks, not choices. https://www.researchgate.net/publication/258500500_What_Drives_the_Spatial_Agency_Bias_An_Italian-Malagasy-Arabic_Comparison_Study
+- **Review of reading-direction effects** (*Psychonomic Bulletin & Review*, 2023): the effects in right-to-left readers are mixed. Arabic readers are usually reversed; Hebrew readers are weaker or mixed, probably because of exposure to English. https://link.springer.com/article/10.3758/s13423-022-02239-1
+- **"Heading Right and Judging Harsher"** (*Social Psychology*, vol. 48, no. 5): rightward spatial orientation makes moral judgments harsher. It uses a lab manipulation and does not compare scripts. https://econtent.hogrefe.com/doi/10.1027/1864-9335/a000316
+- **Lateral aesthetic preference by reading direction** (Hebrew/Arabic vs Russian; one Arabic–English study found no difference). https://link.springer.com/article/10.1007/s40167-018-0062-6
+
+**Design checks before running anything:**
+1. **Mobile layout.** The supplement says the profiles are "left vs. right in the desktop interface", while on mobile `LeftHand` marks the default position. So the main analysis should use only `Template == "desktop"`.
+2. **Mirrored Arabic interface.** An Arabic version existed, and Arabic was one of the 9 added languages. If that version mirrored the layout, `LeftHand` might record the code's ordering rather than the side the user saw. Check the site's Arabic page, or ask the authors, before interpreting results.
+3. **Country stands in for script.** The data records country, not the interface language or the user's script. Use countries whose dominant script reads right to left (Arabic-speaking states, Israel, Iran, Pakistan, Afghanistan). Keep Israel/Hebrew separate, since prior work says its effect is weaker.
+4. **Final check before writing.** Run Google Scholar's "cited by" search on the 2018 *Nature* paper with "reading direction", "left", "script" and "Arabic", and check recent preprints (PsyArXiv, OSF).
