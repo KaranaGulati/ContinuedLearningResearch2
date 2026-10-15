@@ -184,3 +184,19 @@ H2, H3 and H1 share a single build: a market-by-horizon panel of on-chain prices
 - The 7 Aug 2026 TWAP switch date for crypto markets is unverified.
 - Whether Polymarket currently pays holding rewards on long-dated markets (relevant to H2) has not been checked.
 - Whether the Gamma `questionID` maps directly onto UMA adapter events for every market type, including negRisk, has not been confirmed.
+
+---
+
+## More hypotheses sized for a short paper (added 15 Oct 2026)
+
+All five use simple tests (t-tests, chi-square, proportion tests, one regression) and the free HF dataset.
+
+**B1. Gambler's fallacy in repeating crypto "Up or Down" markets.** The same coin gets a new Up/Down market every hour (and every 15 or 5 minutes), and the outcomes are close to coin flips. In `markets.parquet` there are about 131k resolved BTC markets, with Up winning 50.1%, plus about 124–129k each for ETH, SOL and XRP. Prediction: after a run of k "Up" results, the next market opens with a *lower* Up price and more taker buying of Down, even though the next outcome does not depend on the run. Test: (1) check that the outcomes really are independent (runs test, lag-1 autocorrelation); (2) regress the next market's opening price, or its first-hour net buy flow, on streak length (1–6+) by ANOVA or linear trend; (3) check that buying against the fallacy would have paid. If prices *rise* with the streak, that's the hot-hand belief instead, which is also publishable.
+
+**B2. Fan-favorite overpricing in sports.** Teams with large fan bases (decided in advance from social-media followers) are overpriced compared with how often they actually win, as in Levitt's 2004 sportsbook result. Test: Welch t-test of mean (outcome − price) for popular vs other teams, controlling for price bucket.
+
+**B3. Disposition effect.** Wallets sell positions that are up sooner than positions that are down (Shefrin & Statman; Odean 1998). Polymarket adds something stock data can't: every position ends at exactly 0 or 1, so we can measure what selling winners early actually cost. Test: Odean's proportion of gains realized vs proportion of losses realized (PGR vs PLR), compared with a z-test or a paired test across wallets.
+
+**B4. Loss chasing after a big loss (the break-even effect).** After a wallet's largest-ever losing position resolves, its next bet is bigger and on longer odds than after a winning one (Thaler & Johnson, 1990). Test: within-wallet paired t-tests comparing the next bet's size and price after losses vs after wins.
+
+**B5. Round-number clustering.** Trade prices bunch at multiples of 5¢ and 10¢ more than a smooth distribution predicts, and the bunching is stronger for small (retail-sized) trades than for large ones. Test: chi-square goodness-of-fit against a smoothed price distribution, and a comparison of clustering rates by trade-size group.
