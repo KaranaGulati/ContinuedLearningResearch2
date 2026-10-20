@@ -2,6 +2,8 @@
 
 Written 20 October 2026. This file briefs a new Claude chat on what I already know about Polymarket and its data, so we can start research without repeating the groundwork. I want to write a short empirical paper: 4 to 6 pages, psychology-paper format, simple statistics (t-tests, proportions, one regression), pre-registered before the data is analysed.
 
+This chat works in a local folder that already contains the trade log, `trades.parquet` (see "Local setup" below). Everything needed is in this file. There is no other project material to look for.
+
 Everything below was checked during an earlier research session. Items marked [unverified] come from a single secondary source.
 
 ## How Polymarket works
@@ -153,30 +155,56 @@ Columns in `markets.parquet`: `id` (joins to `market_id`), `question`, `slug`, `
 
 Example: the very first trade in the file was on 21 Nov 2022 in "Will Donald J. Trump win the U.S. 2024 Republican presidential nomination?", 100 Yes shares at 50¢, with the same wallet as maker and taker (a self-trade, probably a launch test).
 
-### Querying the trade file without downloading it
+### Local setup
 
-DuckDB can read only the needed parts of the remote file over HTTP. Tested on 20 Oct 2026:
+The project folder should look like this (check with `ls`, since the actual names may differ):
+
+```
+<project folder>/
+  polymarket_context.md     this file
+  trades.parquet            45.8 GB, the trade log
+  markets.parquet           0.5 GB, the market lookup table (download it too if it is missing)
+```
+
+`markets.parquet` is needed for almost any question, because `trades.parquet` only has a `market_id` number. Download link: https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data/resolve/main/markets.parquet
+
+Rules for working with a 46 GB file on a normal computer:
+
+- Never load the whole trade file into pandas (`pd.read_parquet("trades.parquet")`). It would need far more memory than a laptop has.
+- Use DuckDB or Polars, which read only the columns and rows a query needs and can work on files larger than memory.
+- Build small extracts first (only the columns, markets or dates a study needs), save them as new Parquet files, and run the analysis on those.
 
 ```python
 import duckdb
 con = duckdb.connect()
-con.sql("INSTALL httpfs; LOAD httpfs;")
-url = "https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data/resolve/main/trades.parquet"
+con.sql("SET memory_limit = '8GB'")          # adjust to the machine
+trades, markets = "trades.parquet", "markets.parquet"
 
 # first rows
-con.sql(f"SELECT * FROM read_parquet('{url}') LIMIT 5").show()
+con.sql(f"SELECT * FROM read_parquet('{trades}') LIMIT 5").show()
 
-# one day: 5 Nov 2024 UTC -> 498,736 trades, about $163M, in about 3 seconds
-con.sql(f"""SELECT count(*), sum(usd_amount) FROM read_parquet('{url}')
+# one day: 5 Nov 2024 UTC -> 498,736 trades, about $163M
+con.sql(f"""SELECT count(*), sum(usd_amount) FROM read_parquet('{trades}')
             WHERE timestamp BETWEEN 1730764800 AND 1730851200""").show()
+
+# join trades to their questions and outcomes, saved as a smaller extract
+# (here: resolved two-outcome markets open at least 30 days, as in the time-horizon study)
+con.sql(f"""COPY (
+    SELECT t.timestamp, t.market_id, t.price, t.usd_amount, t.nonusdc_side,
+           m.question, m.outcome_prices, m.created_at, m.end_date
+    FROM read_parquet('{trades}') t
+    JOIN read_parquet('{markets}') m ON t.market_id = m.id
+    WHERE m.closed = 1 AND m.neg_risk = 0 AND m.volume >= 1000
+      AND datediff('day', m.created_at, m.end_date) >= 30
+) TO 'extract_horizon.parquet' (FORMAT parquet)""")
 ```
 
-The file is stored in 1,261 chunks that each cover a short time window, so filtering by time is fast. Filtering by `market_id` has to read that column for the whole file, so for many markets it is better to download once and work locally.
+The trade file is stored in 1,261 chunks that each cover a short time window, so filtering by time skips most of the file and is fast. Filtering by `market_id` has to read that column for the whole file, which takes minutes, not seconds. The other three Hugging Face files (`orderfilled.parquet`, `quant.parquet`, `users.parquet`) are not in the folder. DuckDB can read parts of them over the internet if needed (`INSTALL httpfs; LOAD httpfs;`, then `read_parquet('<direct link>')`).
 
 ### Other sources
 
-- **Gamma API** (https://gamma-api.polymarket.com): market metadata, tags and categories. The Hugging Face market file has **no category tags**, so join Gamma tags on `condition_id` when you need categories. Reachable from a cloud container.
-- **CLOB API** price history (`/prices-history`): returned HTTP 403 from the cloud container (likely geoblocked). Full history only in 3-hour or 12-hour buckets; finer data is kept for days to weeks.
+- **Gamma API** (https://gamma-api.polymarket.com): market metadata, tags and categories. The Hugging Face market file has **no category tags**, so join Gamma tags on `condition_id` when you need categories.
+- **CLOB API** price history (`/prices-history`): returned HTTP 403 from a cloud server in an earlier test (likely geoblocking); it may work from a home connection. Full history only in 3-hour or 12-hour buckets; finer data is kept for days to weeks. The trade file is a better price source anyway.
 - **Dune** `polymarket_polygon.*` tables: SQL over the same on-chain data, refreshed about daily, useful for anything after 4 Oct 2026.
 - **Order book history** (unfilled orders, spreads): not in any free source. Paid: Tardis.dev (from 25 May 2026), Telonex (from 11 Oct 2025).
 - Smaller ready-made sets: Jon Becker's prediction-market dataset on GitHub (Polymarket + Kalshi), SimpleFunctions "Settled Markets" (price at settlement and 24h before, CC-BY-4.0).
@@ -188,19 +216,21 @@ The file is stored in 1,261 chunks that each cover a short time window, so filte
 3. Wash trading: estimates range from a median of about 1% of volume (same-wallet round trips) to about 25% (Columbia network method, with peaks near 60% in some weeks). Report results with and without a simple wash filter.
 4. Weighting: results can flip sign between trade-weighted and market- or event-weighted analysis. Report both.
 5. Selection: long-dated markets are mostly political, and short ones mostly crypto and sports. Control for category and format.
+6. Prices are per share traded: a No trade at 0.41 means Yes was about 0.59. Convert No trades with 1 − price before building a Yes price series.
 
 ## What research already exists
 
-A full literature review is in `reports/Polymarket data research landscape.md` in this repository. Almost all of it is 2025 to 2026 preprints, not peer-reviewed.
+This summarises a literature review from an earlier session. Almost all of the work is 2025 to 2026 preprints, not peer-reviewed.
 
 Well covered (avoid as a stand-alone topic):
-- **Calibration:** depends on category, horizon and price. Political markets are underconfident, with prices pulled toward 50% (Le 2026).
-- **Favourite-longshot bias:** contracts under 10¢ lose 19.3¢ per $1 (Cardozo & Rivero-Wildemauwe 2026). The bias is absent in sports.
-- **2024 election:** Polymarket beat polls on the headline contract, but across political markets only 67% beat a coin flip, versus 78% on Kalshi and 93% on PredictIt (Clinton & Huang).
-- **Trader profits:** the top 1% of users take 76.5% of profits, and about 3% of accounts are skilled.
-- **Arbitrage:** about $40M realised from April 2024 to April 2025 (Saguillo et al.).
+- **Calibration:** depends on category, horizon and price. Political markets are underconfident, with prices pulled toward 50% (Le 2026, arXiv 2602.19520).
+- **Favourite-longshot bias:** contracts under 10¢ lose 19.3¢ per $1 (Cardozo & Rivero-Wildemauwe 2026, arXiv 2609.12878). The bias is absent in sports.
+- **2024 election:** Polymarket beat polls on the headline contract, but across political markets only 67% beat a coin flip, versus 78% on Kalshi and 93% on PredictIt (Clinton & Huang, SocArXiv 2025).
+- **Trader profits:** the top 1% of users take 76.5% of profits, and about 3% of accounts are skilled (Gómez-Cram et al., SSRN 6617059).
+- **Arbitrage:** about $40M realised from April 2024 to April 2025 (Saguillo et al., AFT 2025).
 - **LLM forecasting:** no LLM beats the market price at the same moment. In a ForecastBench audit of 527 entries, none significantly beat copying the price.
-- **Insider and informed trading:** Mitts & Ofir flag about $143M of anomalous profit. The first US insider indictment for an event contract came in April 2026.
+- **Insider and informed trading:** Mitts & Ofir (SSRN 6426778) flag about $143M of anomalous profit. The first US insider indictment for an event contract came in April 2026.
+- **Wash trading:** Sirolly, Ma, Kanoria & Sethi (Columbia, SSRN 5714122) estimate about 25% of volume over three years.
 
 Open (no study found):
 - the 2026 fee rollout as a natural experiment
@@ -213,42 +243,38 @@ Open (no study found):
 
 ## Candidate hypotheses
 
-Details are in `hypotheses/polymarket_hypotheses.md`. The one sized for a short paper is written up in `hypotheses/study_plan_time_horizon.md`:
+### Recommended for a short paper: time horizon and favourite underpricing
 
-The idea is time horizon and favourite underpricing. Buying a 95¢ favourite that resolves in months ties up money, so favourites should be underpriced by more the further away resolution is. It makes three predictions:
-- At 90 days before resolution, favourites win more often than their price implies.
-- At 1 day before resolution, there is no gap.
-- The gap grows with time to resolution.
+Buying a 95¢ favourite that resolves in months ties up money, so favourites should be underpriced by more the further away resolution is. The size of the gap gives an implied discount rate, which can be compared with the T-bill rate (rational cost of money) and with the much higher discount rates found in psychology studies of impatience.
 
-The size of the gap gives an implied discount rate to compare with the T-bill rate. The tests are one-sample t-tests, a paired t-test and one regression. The sample is resolved binary markets with at least $1,000 volume: 17,500 open at least 30 days, 5,993 at least 90 days, and 1,751 at least 180 days. This needs prices at fixed horizons, rebuilt from `trades.parquet`.
+Predictions:
+- H1: at 90 days before resolution, favourites win more often than their price implies (mean of outcome − price > 0).
+- H2: at 1 day before resolution, there is no gap.
+- H3: the gap grows with time to resolution.
 
-Other hypotheses in the list that need only free data:
-- Gambler's fallacy in repeating Up/Down markets. About 131k resolved Bitcoin markets, with Up winning 50.1%. Do prices lean against a streak?
-- Fan-favourite overpricing in sports.
-- The disposition effect: traders sell winners sooner than losers.
-- Loss chasing after a big loss.
-- Round-number clustering of trade prices.
+Pure cost of money predicts a gap of about price × rate × time, roughly 1 percentage point at 90 days for an 85¢ favourite with a 4.5% T-bill rate. A much larger gap would point to impatience or a risk premium.
 
-## Lessons from my earlier studies
+Design:
+- Sample: resolved two-outcome markets (`neg_risk = 0`) with at least $1,000 volume and a clean 0/1 outcome, from Nov 2022 onward. Counts from `markets.parquet`: 17,500 markets open at least 30 days, 5,993 at least 90 days, 1,751 at least 180 days. Multiple-choice markets can be added as a check, with errors clustered by event.
+- Price at horizon h days (h = 1, 30, 90, 180): volume-weighted price of trades in the 24 hours before `end_date` minus h days, with at least 3 trades.
+- Favourite: the side priced at 0.50 or more at that moment. Outcome: 1 if the favourite won.
+- Tests: one-sample t-tests of (outcome − price) at each horizon; a paired t-test of 90 days vs 1 day within the same markets; a regression of (outcome − price) on months to resolution with errors clustered by market; implied annual discount rate per horizon with a bootstrap interval.
+- Power: at 90 days (n ≈ 6,000, SD ≈ 0.35) the test detects a gap of about 1.3 points with 80% power.
+- Checks: markets with at least $10,000 volume only; drop political markets (already known to be underconfident).
 
-I ran two pre-registered studies on the Moral Machine dataset in this repository (`studies/`). They taught me five things:
+### Other ideas that need only this data
 
-1. Write the hypotheses and tests down and commit them before looking at results. Then report every pre-registered test, including the ones that fail.
-2. Check the data's own design before trusting it. In the Moral Machine data the first scenario of every session was not randomised, and missing that would have produced a false positive (p = .042).
-3. Add an equivalence test with a pre-chosen smallest effect of interest, so a null result says something ("the effect is smaller than 2 points"). Report effect sizes, not only p-values.
-4. With millions of rows, everything is "significant". Judge results by effect size, and check whether an effect is specific to the hypothesis or shows up everywhere. My smartphone result looked utilitarian but was a general shift on most dimensions.
-5. Choose questions someone needs answered, or explore half of the data first and confirm on the other half. Picking hypotheses only because they were untested produced weak ideas.
+- Gambler's fallacy in repeating Up/Down markets: about 131,000 resolved Bitcoin Up/Down markets, with Up winning 50.1%. After a streak of "Up", does the next market open with a lower Up price?
+- Fan-favourite overpricing in sports: are popular teams priced above how often they actually win?
+- The disposition effect: do wallets sell winning positions sooner than losing ones?
+- Loss chasing: after a big loss, are a wallet's next bets larger and on longer odds?
+- Round-number clustering: do trade prices bunch at 5¢ and 10¢ steps, and more so for small trades?
+- The 2026 fee rollout: did fees (on-chain in `orderfilled.parquet`) change small-trade activity or price reversals in the categories that got them, compared with fee-free geopolitics?
 
-## Environment notes (Claude Code cloud session)
+## How I want to work
 
-- DuckDB with `httpfs` can read the Hugging Face files remotely. pip installs of `duckdb`, `pandas`, `pyarrow`, `scipy` and `matplotlib` work.
-- The cloud container has limited disk (about 30 GB free). Do not download the 46 GB trade file there. Query it remotely or work on a local machine.
-- Polymarket's CLOB price API returned 403 from the container; the Gamma API and docs.polymarket.com worked.
-
-## Files in this repository
-
-- `reports/Polymarket data research landscape.md`: full literature review with citations.
-- `research_notes/Polymarket data research landscape/`: detailed notes behind the review (accuracy, integrity, microstructure, AI forecasting, datasets, applied work).
-- `hypotheses/polymarket_hypotheses.md`: testable hypotheses with designs.
-- `hypotheses/study_plan_time_horizon.md`: plan for the time-horizon paper.
-- `studies/`: the two Moral Machine studies, as worked examples of the pre-register, analyse, write-up process.
+1. Write the hypotheses, measures and tests down before looking at results, and report every planned test, including the ones that fail.
+2. Check the data's own structure before trusting it: duplicates, how markets resolved, odd prices, gaps in time.
+3. Report effect sizes, not only p-values. With millions of rows almost everything is significant. Add an equivalence test with a pre-chosen smallest effect of interest, so a null result still says something.
+4. Check whether an effect is specific to the hypothesis or shows up everywhere.
+5. When ideas are uncertain, explore a random half of the data first and confirm on the other half.
