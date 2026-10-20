@@ -1,6 +1,6 @@
 # Polymarket research context
 
-Written 20 October 2026. This file briefs a new Claude chat on what I already know about Polymarket and its data, so we can start research without repeating the groundwork. I want to write a short empirical paper: 4 to 6 pages, psychology-paper format, simple statistics (t-tests, proportions, one regression), pre-registered before the data is analysed.
+Written 20 October 2026. This file briefs a new Claude chat on what I already know about Polymarket and its data, so we can start research without repeating the groundwork. I want to write a short empirical paper: 4 to 6 pages, psychology-paper format, simple statistics (t-tests, proportions, one regression), pre-registered before the data is analysed. The program I am in wants psychology questions and simple tests, not heavy finance or quant work. The person I present to may know nothing about Polymarket or financial markets, so explanations should work for a 10th grader.
 
 This chat works in a local folder that already contains the trade log, `trades.parquet` (see "Local setup" below). Everything needed is in this file. There is no other project material to look for.
 
@@ -241,35 +241,81 @@ Open (no study found):
 - Polymarket odds on tariffs or the Fed as shocks for asset prices
 - election markets in other countries in 2025
 
+## Psychology concepts used below
+
+- **Availability heuristic** (Tversky & Kahneman, 1973): people judge how likely something is by how easily examples come to mind. Vivid, recent or emotional events feel more likely than they are. Lichtenstein et al. (1978) found people overestimate dramatic causes of death (tornadoes, floods, murder) and underestimate quiet ones (diabetes, stroke).
+- **Dread risk** (Slovic, 1987, *Science*): risks that are catastrophic, uncontrollable, involuntary and unfamiliar (nuclear accidents, terrorism, pandemics) feel scarier and more likely than common risks that kill more people. Gigerenzer (2004) estimated that Americans who drove instead of flying after 9/11 caused roughly 1,500 extra road deaths in the following year.
+- The two reinforce each other: dread events get heavy news coverage, which makes them easy to recall.
+- **Favourite-longshot bias:** bets on unlikely outcomes are priced too high and bets on likely outcomes slightly too low. First documented in horse racing (1949). On Polymarket, contracts bought under 10¢ lost 19.3¢ per $1 and contracts at 90¢ or more earned about 0.8¢ per $1 (Cardozo & Rivero-Wildemauwe 2026); the bias is absent in sports. A summary of Whelan's Kalshi work reports that buyers under 10¢ lost over 60% of their money [unverified]. Deleep (2026) argues that part of it is a "Yes bias": people overpay for "it will happen". Explanations: probability weighting from prospect theory (Kahneman & Tversky, 1979), the fun of a long shot, overconfidence, and the cost of betting against a long shot (buying No at 95¢ ties up money to earn 5¢).
+
 ## Candidate hypotheses
 
-### Recommended for a short paper: time horizon and favourite underpricing
+### Current focus: do people overpay for disaster bets? (dread and availability)
 
-Buying a 95¢ favourite that resolves in months ties up money, so favourites should be underpriced by more the further away resolution is. The size of the gap gives an implied discount rate, which can be compared with the T-bill rate (rational cost of money) and with the much higher discount rates found in psychology studies of impatience.
+Hypothesis: at the same price, questions about frightening events (war, nuclear use, terror attacks, pandemics, natural disasters, deaths) resolve Yes less often than ordinary questions. In other words, fear adds extra overpricing on top of the general long-shot bias.
 
-Predictions:
-- H1: at 90 days before resolution, favourites win more often than their price implies (mean of outcome − price > 0).
-- H2: at 1 day before resolution, there is no gap.
-- H3: the gap grows with time to resolution.
+Why it is not obvious (each point belongs in the paper):
+1. Long-shot bias. Most frightening events are priced at a few cents, and cheap Yes shares are overpriced anyway. So the comparison must be dread vs ordinary questions **at the same price**, or the study only rediscovers the long-shot bias. Comparing Yes questions with Yes questions also controls for the Yes bias.
+2. Insurance. Some people may buy "war happens" as a hedge for their other investments. Paying extra for insurance is rational, so overpricing would not prove a bias. Discuss this as an alternative explanation.
+3. Insiders. In some war markets, people with secret knowledge bet before strikes. That pushes prices toward the correct answer, which works **against** the hypothesis, so it makes the test conservative.
 
-Pure cost of money predicts a gap of about price × rate × time, roughly 1 percentage point at 90 days for an 85¢ favourite with a 4.5% T-bill rate. A much larger gap would point to impatience or a risk premium.
+Design (draft, to be pre-registered before outcomes are examined):
+- Sample: resolved Yes/No markets (`answer1 = 'Yes'`, `neg_risk = 0`), at least $1,000 volume, a clean 0/1 outcome, created from 21 Nov 2022. Count from `markets.parquet`: **80,709 markets**.
+- Coding frightening questions:
+  - **Step 1, keyword shortlist** (question text only). **2,196 markets** match. By group (groups overlap): war/military 1,533, nuclear 177, disaster 158, death 147, disease 136, terror/assassination 63.
+  - **Step 2, human check** with a written rule: "the event would harm or frighten many people if it happened". Keywords alone are messy. "Will Eleven die in Stranger Things?" is fiction. "Trump ends Ukraine war in first 90 days?" is hopeful. "deadline" matches "dead".
+  - Use two raters, or one rater plus a clear rule, and report agreement. Keep a separate "hopeful" list (ceasefire, peace deal, hostage release) for the wishful-thinking companion idea.
+  - These counts used question text only. No outcomes have been examined.
+- Price: volume-weighted Yes price in the 24 hours around 7 days before `end_date`. Use 30 days before as a check, and require a minimum number of trades. Convert No-side trades with 1 − price.
+- Comparison: within price bands (main band 5¢ to 30¢), compare the share that resolved Yes with the average price, for frightening vs ordinary questions. Use a two-proportion test or a t-test of (outcome − price), plus an equivalence test with a pre-chosen smallest effect of interest.
+- Insider check: measuring prices a week before the end avoids most documented insider bets, which came hours to days before events. Sensitivity check: drop markets whose price jumped from below 20% to above 80% in their last 48 hours.
+- A null result is also interesting: it would mean real money makes traders correct for fear.
 
-Design:
-- Sample: resolved two-outcome markets (`neg_risk = 0`) with at least $1,000 volume and a clean 0/1 outcome, from Nov 2022 onward. Counts from `markets.parquet`: 17,500 markets open at least 30 days, 5,993 at least 90 days, 1,751 at least 180 days. Multiple-choice markets can be added as a check, with errors clustered by event.
-- Price at horizon h days (h = 1, 30, 90, 180): volume-weighted price of trades in the 24 hours before `end_date` minus h days, with at least 3 trades.
-- Favourite: the side priced at 0.50 or more at that moment. Outcome: 1 if the favourite won.
-- Tests: one-sample t-tests of (outcome − price) at each horizon; a paired t-test of 90 days vs 1 day within the same markets; a regression of (outcome − price) on months to resolution with errors clustered by market; implied annual discount rate per horizon with a bootstrap interval.
-- Power: at 90 days (n ≈ 6,000, SD ≈ 0.35) the test detects a gap of about 1.3 points with 80% power.
-- Checks: markets with at least $10,000 volume only; drop political markets (already known to be underconfident).
+### How other papers handle insiders
 
-### Other ideas that need only this data
+- **Mitts & Ofir (2026, SSRN 6426778):** five screening rules on the timing and size of trades flag big one-sided bets placed shortly before news. Across about 93,000 markets (Feb 2024 to Feb 2026), flagged trades won 69.9% of the time and made about $143M. The authors say the screen may over- or under-include.
+- **Gómez-Cram, Guo, Kung & Jensen (2026, SSRN 6617059):** "pop-up" accounts, opened just before a single event, traded it, then went dormant. They found 1,950 such accounts. They also separate skill from luck by randomly flipping each trader's buy/sell directions 10,000 times.
+- **Bubblemaps (blockchain analytics firm):** traces wallets funded from the same source. Before the 28 Feb 2026 US strike on Iran it found six new wallets, mostly funded within 24 hours, that made about $1M. Its CEO said certainty is "almost impossible".
+- **Nechepurenko (2026, arXiv 2605.00459):** a market-level "leakage score". It could score only 88 of 12,708 markets (0.7%), mainly because it is hard to date when news became public.
+- **Bock & Guenthoer (HEC master's paper, 2025 to 2026):** an early-warning detector using only information available before resolution.
+- **Calibration and long-shot papers** (Le; Cardozo & Rivero-Wildemauwe; Reichenbach & Walther) appear not to remove insiders. They treat the price as the crowd's forecast. This is from abstracts only and not fully confirmed.
 
-- Gambler's fallacy in repeating Up/Down markets: about 131,000 resolved Bitcoin Up/Down markets, with Up winning 50.1%. After a streak of "Up", does the next market open with a lower Up price?
-- Fan-favourite overpricing in sports: are popular teams priced above how often they actually win?
-- The disposition effect: do wallets sell winning positions sooner than losing ones?
-- Loss chasing: after a big loss, are a wallet's next bets larger and on longer odds?
-- Round-number clustering: do trade prices bunch at 5¢ and 10¢ steps, and more so for small trades?
-- The 2026 fee rollout: did fees (on-chain in `orderfilled.parquet`) change small-trade activity or price reversals in the categories that got them, compared with fee-free geopolitics?
+### Other psychology ideas, novelty-checked on 20 Oct 2026
+
+About 11 targeted web searches found no Polymarket study of any of these. A final Google Scholar check is still needed.
+
+| Idea | Psychology behind it | Simple test | Novelty |
+|---|---|---|---|
+| Round-number thresholds draw more trading ("Will Bitcoin be above $100k?" vs $98k or $102k) | Round numbers as goals and reference points (Pope & Simonsohn, 2011) | Paired t-test of volume, round vs neighbouring thresholds in the same ladder; needs only `markets.parquet` | Not found in any prediction market |
+| Gambler's fallacy in Bitcoin Up/Down markets (about 131,000 resolved; Up won 50.1%) | Expecting a streak to reverse (casino and lottery studies, e.g. Croson & Sundali 2005; Clotfelter & Cook 1993) | Mean opening Up price by length of the preceding streak (ANOVA or t-test) | Not found; the only short-market study is on settlement manipulation (Dai, Jia & Yu 2026) |
+| Trades at round prices (50¢, 25¢) do worse | Less precise thinkers pick round numbers (Kuo, Lin & Zhao 2015, stocks) | Chi-square on the last digit of the cent price; t-test of results, round vs non-round. Polymarket trades in whole cents, so this only compares prices ending in 0 or 5 with other prices. | Not found in prediction markets |
+| Wishful thinking: hoped-for outcomes (ceasefire, deal signed) are overpriced | Desirability bias | Same design as the dread study with a "hopeful" list | Partly done elsewhere: partisan wishful thinking in the Iowa Electronic Markets (Forsythe, Rietz & Ross 1999; Rothschild & Sethi 2015); no Polymarket test |
+
+Ranking by novelty: round numbers and gambler's fallacy are untouched, dread and round prices are first tests of known effects in a new setting, and wishful thinking is the least new. Dread and wishful thinking could form one paper: "Do fear and hope distort crowd forecasts?"
+
+### Earlier, more finance-style option: time horizon and favourite underpricing
+
+Buying a 95¢ favourite that resolves in months ties up money, so favourites may be underpriced by more the further away resolution is. Tests: one-sample t-tests of (outcome − price) at 1, 30, 90 and 180 days before the end, a paired t-test, and one regression. Sample: resolved two-outcome markets with at least $1,000 volume, 17,500 open at least 30 days, 5,993 at least 90 days, and 1,751 at least 180 days. Because it is about the cost of tied-up money, this idea sits closer to finance than to psychology.
+
+## Presenting to a non-specialist
+
+A slide outline was drafted (not built) for explaining the dread study to someone who knows nothing about markets. The titles are full sentences, so the titles alone tell the story:
+
+1. Do people overpay for disaster bets? Fear and real-money forecasts on Polymarket (title)
+2. People judge how likely something is by how easily they can picture it
+3. Frightening, uncontrollable risks feel even more likely
+4. Polymarket is a website where people bet real money on yes/no questions about the future
+5. A share pays $1 if the event happens, so its price works like a probability (30¢ means about 30%)
+6. The money comes from other traders, so the price is the crowd's best guess (30¢ + 70¢ = the $1 the winner takes)
+7. Many Polymarket questions are about frightening events (the nuclear-detonation market reached about 19% before Polymarket removed it in March 2026)
+8. Research question: are frightening events priced above how often they really happen, more than ordinary events at the same price?
+9. The answer is not obvious: long-shot bias, insurance buying and insiders could hide or fake the effect
+10. Every Polymarket trade since November 2022 is public (1.27 billion trades, 4.05 million questions, 80,709 eligible)
+11. Step 1: questions are sorted into frightening and ordinary by a fixed rule (keywords, then a human check)
+12. Step 2: compare the price a week before the end with what actually happened, within the same price range
+13. Each possible result has a clear meaning (overpriced / no difference / underpriced)
+14. The plan is written down before looking at results, and the tests are simple
+15. Conclusions, then references and backup slides (long-shot bias, insiders, glossary, keyword list)
 
 ## How I want to work
 
