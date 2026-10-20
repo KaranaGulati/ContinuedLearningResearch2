@@ -28,9 +28,28 @@ Every market has two sides, but the labels vary. Counts from all 4,049,900 marke
 | Up / Down | "Bitcoin Up or Down, 3AM ET" (hourly, 15-minute and 5-minute versions) | 798,149 (20%) |
 | Team names, Favorite / Underdog, Odd / Even, Over 2.5 and others | sports | the remaining ~16% |
 
-Multiple-choice questions ("Who will win the World Cup?") are groups of yes/no markets, one per option, of which only one can resolve Yes. These are flagged `neg_risk = 1` and number 772,609 markets (19%). Price ranges ("Bitcoin price on Friday: $95k to $100k, ...") and ladders ("above $70k?", "above $72k?") are built the same way.
-
 About 78% of markets resolve No, and up/down or over/under markets are designed to sit near 50/50, so analyses should split by format.
+
+### Multiple-choice questions
+
+A question with more than two possible answers ("Who will win the 2024 US presidential election?") is built as a group of separate yes/no markets, one per answer, and only one of them can resolve Yes. Each answer has its own `market_id`. The group shares an `event_id` and an `event_title`. In the data, these markets have `neg_risk = 1` in `markets.parquet`, and their trades show `NEGRISK_CTF_EXCHANGE` (or its V2 version) in the `contract` column. 772,609 markets (19%) belong to such groups. A stand-alone question like "Will the Fed cut rates in December?" is a single market with `neg_risk = 0`.
+
+The 2024 election group (`event_title` "Presidential Election Winner 2024", `event_id` 903193) has 17 markets:
+
+| market_id | Question | Result | Volume |
+|---|---|---|---|
+| 253591 | Will Donald Trump win the 2024 US Presidential Election? | Yes | $1,531M |
+| 253597 | Will Kamala Harris win the 2024 US Presidential Election? | No | $1,037M |
+| 253642 | Will any other Republican Politician win...? | No | $242M |
+| 253609 | Will Michelle Obama win...? | No | $153M |
+| 253595 | Will Robert F. Kennedy Jr. win...? | No | $142M |
+| 12 more | Haley, Biden, Newsom, DeSantis, Kanye West and others | No | $9M to $117M each |
+
+The Yes prices in a group should add up to about $1 at any moment. When they don't, there is free money, which is what the arbitrage papers measured (about $40M from April 2024 to April 2025).
+
+For analysis, the markets in one group are not independent questions: the 16 losing candidates above are one question split into pieces. Counting each as a separate market inflates the sample and mixes long shots with real contenders, so many studies analyse these groups at the event level, or report results both ways.
+
+Price ranges ("Bitcoin price on Friday: $95k to $100k, ...") are built the same way. Ladders ("above $70k?", "above $72k?") are separate markets on the same date, and their prices together form a probability curve.
 
 ### Orders
 
@@ -65,7 +84,9 @@ Polymarket also runs perpetual futures ("perps") on a separate exchange (api.per
 
 ### Main dataset: Hugging Face `SII-WANGZJ/Polymarket_data`
 
-- Page: https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data
+- Dataset page: https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data. This is a web page with the authors' description, column documentation and license. Its "Files and versions" tab (https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data/tree/main) lists the five files. The page itself is not a download.
+- Direct file links use the form `https://huggingface.co/datasets/SII-WANGZJ/Polymarket_data/resolve/main/<file name>`. Opening one starts the download of that file. The same address works for reading parts of a file remotely with DuckDB.
+- Authors: Zhengjie Wang and colleagues (Shanghai Innovation Institute, with Westlake University, Shanghai Jiao Tong, Harbin Institute of Technology and Fudan).
 - License: MIT. Built from Polygon blockchain logs and verified against the chain.
 - Coverage: every order-book trade from 21 Nov 2022 to 4 Oct 2026 (V1 and V2 contracts). It does not cover the 2020 to 2022 period, when Polymarket used an automated market maker instead of an order book.
 
@@ -79,7 +100,54 @@ Polymarket also runs perpetual futures ("perps") on a separate exchange (api.per
 
 The files are Parquet, not CSV. Pandas, Polars, DuckDB and R read them directly.
 
-Columns in `trades.parquet`: `timestamp` (Unix seconds, UTC), `block_number`, `transaction_hash`, `log_index`, `contract` (CTF_EXCHANGE, NEGRISK_CTF_EXCHANGE, and their V2 versions), `market_id`, `condition_id`, `event_id`, `maker`, `taker` (wallet addresses), `price` (0 to 1), `usd_amount`, `token_amount`, `maker_direction`, `taker_direction` (BUY or SELL), `nonusdc_side` (token1 = first outcome, token2 = second), `asset_id`.
+### How the five files relate
+
+They are not pieces of one file. Four are the same trade records stored in different forms, and one is a separate lookup table, so the 279 GB total is mostly the same information stored four ways.
+
+```
+                 Polygon blockchain
+                        |
+             orderfilled.parquet   (raw source, 127 GB, 2.03B rows)
+            /           |           \
+  trades.parquet   quant.parquet   users.parquet
+  (46 GB, 1.27B)   (45 GB, 1.27B)  (61 GB, 2.03B)
+
+  markets.parquet  (0.5 GB, 4.05M rows): separate, one row per question
+```
+
+| File | What it is | Use it for |
+|---|---|---|
+| `orderfilled.parquet` | Raw blockchain events: raw units, no question names, each match appears more than once (one event per maker order plus a summary event for the taker). The only file with per-trade fees. | Verifying against the chain; fee studies |
+| `trades.parquet` | The raw events cleaned: one row per trade, prices in dollars, linked to its market, summary events removed. | Most research (default) |
+| `quant.parquet` | The same trades rewritten from the Yes side: "buy No at 30¢" becomes "sell Yes at 70¢". | One price series per question |
+| `users.parquet` | The same fills organised by wallet, one row for each trader's side. | Trader studies: profit and loss, disposition effect, loss chasing |
+| `markets.parquet` | Not trades. One row per question: text, labels, outcome, dates, volume. | Looking up what a `market_id` is and how it resolved |
+
+A typical project needs `trades.parquet` (or `quant.parquet`) plus `markets.parquet`. Download `markets.parquet` whole (0.5 GB). It is needed for almost any question, because `trades.parquet` only gives a `market_id` number, not the question text or outcome, and the two files join on `trades.market_id = markets.id`.
+
+### What `trades.parquet` contains
+
+Each row is one trade (one fill): 1,266,885,846 rows from 21 Nov 2022 to 4 Oct 2026. Real rows from election day 2024 in "Will Donald Trump win the 2024 US Presidential Election?" (`market_id` 253591), pulled remotely:
+
+| time (UTC) | price | usd_amount | token_amount | maker | taker | nonusdc_side |
+|---|---|---|---|---|---|---|
+| 2024-11-05 00:00:01 | 0.591 | 1,754.89 | 2,969.36 | 0xc23b... SELL | 0x6753... BUY | token1 (Yes) |
+| 2024-11-05 00:00:01 | 0.410 | 5.84 | 14.25 | 0x0b58... SELL | 0x4f4c... BUY | token2 (No) |
+| 2024-11-05 00:00:03 | 0.591 | 0.99 | 1.68 | 0xc23b... SELL | 0xe310... BUY | token1 (Yes) |
+
+The first row means someone bought 2,969 Yes shares at 59.1¢, paying $1,754.89, from a wallet whose sell order was resting on the book. That market had 150,892 trades worth $67.7M on 5 Nov 2024 (UTC).
+
+The 17 columns:
+
+- When: `timestamp` (Unix seconds, UTC), `block_number` (a Polygon block, roughly every 2 seconds).
+- Which market: `market_id` (join to `markets.parquet`), `condition_id` (blockchain ID of the question), `event_id` (the multiple-choice group), `asset_id` (ID of the exact share traded), `nonusdc_side` (which share: `token1` is usually Yes, Up or Over; `token2` is No), `contract` (which exchange contract: `CTF_EXCHANGE` for stand-alone markets, `NEGRISK_CTF_EXCHANGE` for multiple-choice groups, and `_V2` versions from 28 Apr 2026).
+- Price and size: `price` (price per share of the share traded, 0 to 1; a No trade at 0.41 means Yes was about 0.59, so convert with 1 − price or use `quant.parquet` for a Yes-only series), `token_amount` (shares), `usd_amount` (dollars paid).
+- Who: `maker` (wallet whose order was resting), `taker` (wallet that traded against it), `maker_direction` and `taker_direction` (BUY or SELL, read from the blockchain, so the side that started the trade is known exactly).
+- Proof: `transaction_hash` and `log_index` (the trade's location on the blockchain, publicly verifiable).
+
+What you can build from it: the price of any market at any moment, volume by market or hour, each wallet's full history and profit or loss, buying vs selling pressure, and self-trades (`maker = taker`, the simplest wash-trading signal).
+
+What it does not contain: names or identities (only wallet addresses), unfilled orders (so no spreads or order book depth), fees (only in `orderfilled.parquet`), question text, categories or outcomes (join `markets.parquet`; categories come from the Gamma API), and anything before 21 Nov 2022 or after 4 Oct 2026.
 
 Columns in `markets.parquet`: `id` (joins to `market_id`), `question`, `slug`, `condition_id`, `token1`, `token2`, `answer1`, `answer2`, `closed`, `active`, `archived`, `outcome_prices` (for example `['1', '0']` means answer1 won; some closed markets show values like 0.9995 or 0.5 and need care), `volume`, `event_id`, `event_slug`, `event_title`, `created_at`, `end_date`, `updated_at`, `neg_risk`.
 
